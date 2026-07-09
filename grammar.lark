@@ -1,0 +1,106 @@
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  MyAlgo - قواعد اللغة الخوارزمية الفرنسية الأكاديمية       ║
+// ║  Grammaire algorithmique académique française               ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+start: en_tete declarations "Début"i instructions "Fin"i
+
+// ── رأس الخوارزمية ──
+en_tete: "Algorithme"i CNAME ";"
+
+// ── التصريحات ──
+declarations: declaration_const_block* declaration_var_block*
+declaration_const_block: ("Constante"i | "Const"i) const_line+
+const_line: CNAME "<-" expression ";"
+declaration_var_block: ("Variable"i | "Var"i) var_line+
+var_line: CNAME ("," CNAME)* ":" type_donnee ";"
+
+!type_donnee: "entier"i | "réel"i | "reel"i
+           | "caractère"i | "caractere"i
+           | "chaine de caractères"i | "chaine de caracteres"i | "chaine"i
+           | "booléen"i | "booleen"i
+           | "Tableau"i "[" expression ".." expression "]" "de"i type_donnee
+
+// ── التعليمات ──
+instructions: instruction*
+?instruction: affectation
+            | lecture
+            | ecriture
+            | condition_simple
+            | condition_choix
+            | boucle_pour
+            | boucle_pour_desc
+            | boucle_tantque
+            | boucle_repeter
+            | selon_cas
+            | appel_fonction
+
+// ── التعليمات الأساسية ──
+affectation: (CNAME | acces_tableau) "<-" expression ";"
+acces_tableau: CNAME "[" expression "]"
+
+lecture: "Lire"i "(" cible_lecture ("," cible_lecture)* ")" ";"
+?cible_lecture: acces_tableau | CNAME
+
+ecriture: ("Ecrire"i | "Écrire"i) "(" expression ("," expression)* ")" ";"
+
+// ── الشروط ──
+condition_simple: "Si"i condition "alors"i instructions "FinSi"i
+
+condition_choix: "Si"i condition "alors"i instructions "Sinon"i instructions "FinSi"i
+
+// ── الحلقات ──
+boucle_pour: "Pour"i CNAME "<-" expression ("à"i | "a"i) expression "Faire"i instructions "FinPour"i
+boucle_pour_desc: "Pour"i CNAME "<-" expression ("à"i | "a"i) expression "pas"i expression "Faire"i instructions "FinPour"i
+boucle_tantque: ("Tant que"i | "TantQue"i) condition "Faire"i instructions "FinTantQue"i
+boucle_repeter: ("Répéter"i | "Repeter"i) instructions ("Jusqu'à"i | "Jusqu'a"i | "Jusqua"i) condition ";"
+
+// ── حسب (Switch/Case) ──
+selon_cas: "Selon"i expression "Faire"i cas_item+ cas_sinon? "FinSelon"i
+cas_item: "Cas"i expression ":" instructions
+cas_sinon: "Sinon"i ":" instructions
+
+// ── استدعاء دوال مدمجة ──
+appel_fonction: CNAME "(" (expression ("," expression)*)? ")" ";"
+
+// ── الشروط والمقارنات ──
+?condition: condition_ou
+?condition_ou: condition_et ("OU"i condition_et)*
+?condition_et: condition_non ("ET"i condition_non)*
+?condition_non: "NON"i condition_base -> condition_non
+              | condition_base
+?condition_base: expression comparateur expression -> comparaison
+               | expression
+               | "(" condition ")" -> cond_parens
+
+!comparateur: "=" | "<>" | "<" | ">" | "<=" | ">="
+
+// ── التعبيرات الرياضية ──
+?expression: terme (op_add terme)*
+!op_add: "+" | "-"
+?terme: facteur (op_mul facteur)*
+!op_mul: "*" | "/" | "DIV"i | "MOD"i
+?facteur: unaire ("^" unaire)*
+?unaire: "-" base -> neg
+       | base
+
+NUMBER: /-?\d+(\.\d+)?/
+?base: CNAME
+     | NUMBER
+     | ESCAPED_STRING
+     | "vrai"i
+     | "faux"i
+     | acces_tableau
+     | appel_expr
+     | "(" expression ")" -> parens
+
+// ── استدعاء دالة كتعبير ──
+appel_expr: CNAME "(" (expression ("," expression)*)? ")"
+
+// ── التعليقات والمسافات ──
+COMMENT: "//" /[^\n]*/
+%import common.CNAME
+%import common.ESCAPED_STRING
+%import common.WS
+%ignore WS
+%ignore COMMENT
