@@ -138,13 +138,26 @@ class AlgoTransformer(Transformer):
     
     def _check_name(self, n, check_defined=False, is_assign=False):
         import keyword
-        if keyword.iskeyword(n) or n in ["math", "random", "_lire", "input", "sys", "time", "len", "print", "abs", "int", "float", "str", "bool", "True", "False", "__builtins__", "__import__", "eval", "exec", "globals", "locals", "dir", "vars"]:
-            raise ValueError(f"الاسم '{n}' محجوز ولا يمكن استخدامه.")
+        n_lower = n.lower()
+        algo_keywords = {
+            "algorithme", "début", "debut", "fin", "variable", "var", "constante", "const",
+            "entier", "réel", "reel", "caractère", "caractere", "chaine", "booléen", "booleen", "tableau",
+            "si", "alors", "sinon", "finsi", "pour", "faire", "finpour", "tantque", "fintantque",
+            "répéter", "repeter", "jusqu'à", "jusqu'a", "jusqua", "selon", "cas", "finselon",
+            "lire", "ecrire", "écrire", "et", "ou", "non", "vrai", "faux", "div", "mod", "de", "pas", "à", "a"
+        }
+        py_keywords = ["math", "random", "_lire", "input", "sys", "time", "len", "print", "abs", "int", "float", "str", "bool", "true", "false", "__builtins__", "__import__", "eval", "exec", "globals", "locals", "dir", "vars"]
+        
+        if keyword.iskeyword(n) or n_lower in py_keywords or n_lower in algo_keywords:
+            raise ValueError(f"الكلمة '{n}' محجوزة ولا يمكن استخدامها كاسم لمتغير أو ثابت.")
         if check_defined:
             if n not in self.variables and n not in self.constants:
                 raise ValueError(f"المتغير '{n}' غير معرّف.")
             if is_assign and n in self.constants:
                 raise ValueError(f"لا يمكن تغيير قيمة الثابت '{n}'.")
+        else:
+            if n in self.variables or n in self.constants:
+                raise ValueError(f"تم التصريح عن المُعرّف '{n}' سابقاً، لا يمكن التصريح به أكثر من مرة.")
 
     def declarations(self, items):
         parts = []
@@ -157,7 +170,7 @@ class AlgoTransformer(Transformer):
         return [i for i in items if isinstance(i, str)]
 
     def const_line(self, items):
-        n, v = str(items[0]), str(items[1])
+        n, v = str(items[0]).lower(), str(items[1])
         self._check_name(n)
         self.constants[n] = v
         self.variables[n] = "ثابت"
@@ -174,7 +187,7 @@ class AlgoTransformer(Transformer):
         lines, var_names = [], []
         ts = str(items[-1]) if items else "entier"
         for item in items[:-1]:
-            if isinstance(item, Token): var_names.append(str(item))
+            if isinstance(item, Token): var_names.append(str(item).lower())
         defaults = {"entier":"0","réel":"0.0","reel":"0.0","caractère":"''",
                      "caractere":"''","chaine de caractères":"''",
                      "chaine de caracteres":"''","chaine":"''",
@@ -194,7 +207,8 @@ class AlgoTransformer(Transformer):
 
     @v_args(meta=True)
     def affectation(self, meta, items):
-        var_name = str(items[0]).split('[')[0]
+        var_target = str(items[0]).lower() if isinstance(items[0], Token) else str(items[0])
+        var_name = var_target.split('[')[0]
         self._check_name(var_name, check_defined=True, is_assign=True)
         if var_name in self.variables:
             var_type = self.variables[var_name]
@@ -222,13 +236,17 @@ class AlgoTransformer(Transformer):
                         raise ValueError(f"المتغير '{var_name}' من نوع '{var_type}'، لا يمكن إسناد المتغير الرقمي '{val}' إليه.")
                 elif val_type in ("booléen", "booleen") and var_type not in ("booléen", "booleen", "entier"):
                     raise ValueError(f"المتغير '{var_name}' من نوع '{var_type}'، لا يمكن إسناد المتغير المنطقي '{val}' إليه.")
-        return f"#_L{meta.line}_\n{items[0]} = {items[1]}"
-    def acces_tableau(self, items): return f"{items[0]}[{items[1]}]"
+        return f"#_L{meta.line}_\n{var_target} = {items[1]}"
+    def acces_tableau(self, items): return f"{str(items[0]).lower()}[{items[1]}]"
     
     @v_args(meta=True)
     def lecture(self, meta, items):
-        for i in items: self._check_name(str(i).split('[')[0], check_defined=True, is_assign=True)
-        return f"#_L{meta.line}_\n" + "\n".join(f"{i} = _lire('{i}')" for i in items)
+        cibles = []
+        for i in items:
+            t = str(i).lower() if isinstance(i, Token) else str(i)
+            self._check_name(t.split('[')[0], check_defined=True, is_assign=True)
+            cibles.append(t)
+        return f"#_L{meta.line}_\n" + "\n".join(f"{c} = _lire('{c}')" for c in cibles)
     
     @v_args(meta=True)
     def ecriture(self, meta, items):
@@ -244,13 +262,15 @@ class AlgoTransformer(Transformer):
 
     @v_args(meta=True)
     def boucle_pour(self, meta, items):
-        self._check_name(str(items[0]), check_defined=True, is_assign=True)
-        return f"#_L{meta.line}_\nfor {items[0]} in range(int({items[1]}), int({items[2]}) + 1):\n{_indent(items[3])}"
+        var_n = str(items[0]).lower()
+        self._check_name(var_n, check_defined=True, is_assign=True)
+        return f"#_L{meta.line}_\nfor {var_n} in range(int({items[1]}), int({items[2]}) + 1):\n{_indent(items[3])}"
         
     @v_args(meta=True)
     def boucle_pour_desc(self, meta, items):
-        self._check_name(str(items[0]), check_defined=True, is_assign=True)
-        return f"#_L{meta.line}_\nfor {items[0]} in range(int({items[1]}), int({items[2]}) - 1, int({items[3]})):\n{_indent(items[4])}"
+        var_n = str(items[0]).lower()
+        self._check_name(var_n, check_defined=True, is_assign=True)
+        return f"#_L{meta.line}_\nfor {var_n} in range(int({items[1]}), int({items[2]}) - 1, int({items[3]})):\n{_indent(items[4])}"
         
     @v_args(meta=True)
     def boucle_tantque(self, meta, items):
@@ -320,11 +340,12 @@ class AlgoTransformer(Transformer):
         for i in range(1, len(items)): r += f" ** {items[i]}"
         return r
     def neg(self, items): return f"-({items[0]})"
-    def base(self, items):
-        v = str(items[0])
-        if v.lower() == 'vrai': return 'True'
-        if v.lower() == 'faux': return 'False'
-        return v
+    def variable_ref(self, items):
+        v_str = str(items[0]).lower()
+        if v_str == 'vrai': return 'True'
+        if v_str == 'faux': return 'False'
+        self._check_name(v_str, check_defined=True)
+        return v_str
 
 # ─── أدوات الأخطاء ──────────────────────────────────────────────
 def _nice(t):

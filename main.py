@@ -1,4 +1,4 @@
-"""MyAlgo IDE"""
+"""MyAlgo IDE, By Aymen Chraf"""
 import sys, os, threading
 from PyQt6.QtWidgets import *
 from PyQt6.QtGui import *
@@ -205,7 +205,7 @@ class MainWindow(QMainWindow):
         # Memory table (Bottom Right)
         mc=QWidget(); ml2=QVBoxLayout(mc); ml2.setContentsMargins(0,0,0,0); ml2.setSpacing(0)
         ml2.addWidget(s._hdr("🧠 حالة الذاكرة",C['purple']))
-        s.mem_table=QTableWidget(0,3); s.mem_table.setHorizontalHeaderLabels(["المتغير","القيمة","النوع"])
+        s.mem_table=QTableWidget(0,3); s.mem_table.setHorizontalHeaderLabels(["المعرف","القيمة","النوع"])
         s.mem_table.horizontalHeader().setStretchLastSection(True)
         s.mem_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         s.mem_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -483,7 +483,7 @@ class MainWindow(QMainWindow):
         t.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(t)
         
-        sub = QLabel("الإصدار 0.5 (نسخة تجريبية غير مستقرة)")
+        sub = QLabel("الإصدار 0.6 (نسخة beta)")
         sub.setFont(QFont("Cairo", 13))
         sub.setStyleSheet(f"color: {C['red']}; font-weight: bold; margin-bottom: 15px;")
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -491,7 +491,7 @@ class MainWindow(QMainWindow):
         
         desc = QLabel(
             "<div style='text-align:center;'>"
-            "<p style='margin-bottom:15px;'>هذا البرنامج لا يزال قيد التطوير المستمر.<br/><b>يُرجى عدم استخدامه في التدريس حالياً</b> لأنه قيد التجربة.</p>"
+            "<p style='margin-bottom:15px;'>هذا البرنامج لا يزال قيد التطوير .<br/><b>يُرجى عدم استخدامه في التدريس حالياً</b> لأنه قد يحتوي على أخطاء.</p>"
             "<p style='color:#6B7280; font-size:14px;'>للإبلاغ عن أي مشكلة، يرجى التواصل عبر البريد الإلكتروني:<br/>"
             f"<a href='mailto:aymen.chraf@gmail.com' style='color:{C['accent']}; text-decoration:none; font-weight:bold;'>aymen.chraf@gmail.com</a></p>"
             "</div>"

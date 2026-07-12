@@ -46,7 +46,8 @@ class AlgoHighlighter(QSyntaxHighlighter):
             r'\btant que\b', r'\btantque\b', r'\bfintantque\b',
             r'\brépéter\b', r'\brepeter\b',
             r'\bjusqu\'à\b', r'\bjusqu\'a\b', r'\bjusqua\b',
-            r'\bselon\b', r'\bcas\b', r'\bfinselon\b', r'\bautrement\b'
+            r'\bselon\b', r'\bcas\b', r'\bfinselon\b', r'\bautrement\b',
+            r'\bà\b', r'\ba\b'
         ]
         _add_rules(control_keywords, self._fmt("#0000FF", bold=True))
 

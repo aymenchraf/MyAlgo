@@ -85,14 +85,14 @@ appel_fonction: CNAME "(" (expression ("," expression)*)? ")" ";"
        | base
 
 NUMBER: /-?\d+(\.\d+)?/
-?base: CNAME
+?base: variable_ref
      | NUMBER
      | ESCAPED_STRING
-     | "vrai"i
-     | "faux"i
      | acces_tableau
      | appel_expr
      | "(" expression ")" -> parens
+
+variable_ref: CNAME
 
 // ── استدعاء دالة كتعبير ──
 appel_expr: CNAME "(" (expression ("," expression)*)? ")"
