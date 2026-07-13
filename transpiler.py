@@ -6,14 +6,10 @@ from lark import Lark, Tree, Token, Transformer, UnexpectedInput, UnexpectedToke
 
 # ─── رسائل الخطأ بالعربية ────────────────────────────────────────
 ERR = {
-    "unexpected_token": "⛔ خطأ نحوي في السطر {line}:\n   وُجد '{found}' بينما كان المتوقع: {expected}",
-    "unexpected_char": "⛔ حرف غير متوقع في السطر {line}, العمود {col}:\n   الحرف '{char}' غير مسموح به هنا.",
-    "unexpected_eof": "⛔ انتهى النص بشكل غير متوقع.\n   تأكد من كتابة 'Fin.' في نهاية الخوارزمية.",
-    "missing_semi": "💡 تلميح: ربما نسيت الفاصلة المنقوطة ';' في السطر {line}.",
-    "division_zero": "⚠️ خطأ حسابي: لا يمكن القسمة على صفر!",
-    "undefined_var": "⚠️ المتغير '{name}' غير معرّف. تأكد من تعريفه في قسم التصريحات.",
-    "type_error": "⚠️ خطأ في نوع البيانات: {msg}",
-    "index_error": "⚠️ مؤشر المصفوفة خارج النطاق: {msg}",
+    "division_zero": "⛔ خطأ حسابي في وقت التنفيذ:\n   لا يمكن القسمة على صفر!\n\n💡 تلميح: تحقق من قيمة المقام (المتغير الذي تقسم عليه)، وتأكد أنه لا يساوي 0 قبل عملية القسمة.",
+    "undefined_var": "⛔ خطأ في وقت التنفيذ:\n   المتغير '{name}' غير معرّف.\n\n💡 تلميح: تأكد من التصريح عنه في قسم 'Variable' قبل 'Début'.\n   مثال: Variable {name} : entier;",
+    "type_error": "⛔ خطأ في نوع البيانات:\n   {msg}",
+    "index_error": "⛔ خطأ في الوصول للمصفوفة:\n   {msg}\n\n💡 تلميح: تحقق من أن المؤشر (index) لا يتجاوز حجم المصفوفة المُعرَّف.",
     "general": "⛔ خطأ: {msg}",
 }
 
@@ -149,15 +145,15 @@ class AlgoTransformer(Transformer):
         py_keywords = ["math", "random", "_lire", "input", "sys", "time", "len", "print", "abs", "int", "float", "str", "bool", "true", "false", "__builtins__", "__import__", "eval", "exec", "globals", "locals", "dir", "vars"]
         
         if keyword.iskeyword(n) or n_lower in py_keywords or n_lower in algo_keywords:
-            raise ValueError(f"الكلمة '{n}' محجوزة ولا يمكن استخدامها كاسم لمتغير أو ثابت.")
+            raise ValueError(f"الكلمة '{n}' محجوزة ولا يمكن استخدامها كاسم لمتغير أو ثابت.\n💡 تلميح: اختر اسماً آخر مثل '{n}1' أو 'my_{n}'.")
         if check_defined:
             if n not in self.variables and n not in self.constants:
-                raise ValueError(f"المتغير '{n}' غير معرّف.")
+                raise ValueError(f"المتغير '{n}' غير معرّف.\n💡 تلميح: أضف التصريح عنه قبل 'Début':\n   Variable {n} : entier;")
             if is_assign and n in self.constants:
-                raise ValueError(f"لا يمكن تغيير قيمة الثابت '{n}'.")
+                raise ValueError(f"لا يمكن تغيير قيمة الثابت '{n}'.\n💡 تلميح: الثوابت (Constante) لا يمكن تعديلها بعد تعريفها. استخدم 'Variable' إذا أردت تغيير القيمة.")
         else:
             if n in self.variables or n in self.constants:
-                raise ValueError(f"تم التصريح عن المُعرّف '{n}' سابقاً، لا يمكن التصريح به أكثر من مرة.")
+                raise ValueError(f"تم التصريح عن المُعرّف '{n}' سابقاً، لا يمكن التصريح به أكثر من مرة.\n💡 تلميح: كل متغير يجب أن يُصرَّح عنه مرة واحدة فقط.")
 
     def declarations(self, items):
         parts = []
@@ -322,7 +318,6 @@ class AlgoTransformer(Transformer):
     def condition_ou(self, items): return " or ".join(str(i) for i in items)
     def cond_parens(self, items): return f"({items[0]})"
     def parens(self, items): return f"({items[0]})"
-
     def expression(self, items):
         r = str(items[0])
         for i in range(1, len(items), 2): r += f" {items[i].children[0]} {items[i+1]}"
@@ -351,42 +346,78 @@ class AlgoTransformer(Transformer):
 def _nice(t):
     t_str = str(t).replace("'", "").replace('"', "")
     m = {
-        "CNAME": "اسم (متغير/دالة)", "ESCAPED_STRING": 'نص "..."', "NUMBER": "رقم",
-        "SEMICOLON": "فاصلة منقوطة ';'", "COLON": "نقطتين ':'", "COMMA": "فاصلة ','",
-        "LPAR": "قوس '('", "RPAR": "قوس ')'", "EQUAL": "علامة المساواة '='",
-        "_EOF": "نهاية الملف"
+        "CNAME": "اسم متغير", "ESCAPED_STRING": 'نص "..."',
+        "NUMBER": "رقم", "SEMICOLON": "فاصلة منقوطة ';'",
+        "COLON": "نقطتين ':'", "COMMA": "فاصلة ','",
+        "LPAR": "قوس فتح '('", "RPAR": "قوس إغلاق ')'",
+        "_EOF": "نهاية الملف",
     }
+    kw = {"Algorithme","Début","Fin","Variable","Constante","Si","alors",
+          "Sinon","FinSi","Pour","Faire","FinPour","TantQue","FinTantQue",
+          "Répéter","Jusqu'à","Selon","Cas","FinSelon","Lire","Ecrire"}
     if t_str.startswith("__ANON"): return "رمز أو كلمة مفتاحية"
-    if t_str in ["Algorithme", "Début", "Fin", "Variable", "Constante", "Si", "Alors", "Sinon", "Pour", "Faire", "Tant que", "Répéter", "Jusqu'à"]:
-        return f"الكلمة المفتاحية '{t_str}'"
+    if t_str in kw: return f"'{t_str}'"
     return m.get(t_str, t_str)
 
-def _fmt_parse_err(e):
+def _src_line(code, n):
+    lines = code.split('\n')
+    return lines[n-1].rstrip() if 0 < n <= len(lines) else None
+
+def _fmt_parse_err(e, code_text=""):
     if isinstance(e, UnexpectedToken):
-        exp = "، ".join(_nice(x) for x in list(e.expected or [])[:5]) or "?"
-        found = e.token.value
-        msg = f"⛔ خطأ إملائي/نحوي في السطر {e.line} (العمود {e.column}):\n"
-        msg += f"   البرنامج وجد الكلمة أو الرمز '{found}'\n   بينما كان يتوقع أحد الأشياء التالية: {exp}"
-        if "فاصلة منقوطة" in exp or ";" in exp: 
-            msg += f"\n\n💡 تلميح: يبدو أنك نسيت إضافة الفاصلة المنقوطة ';' في نهاية السطر السابق أو الحالي."
-        elif "Début" in exp:
-            msg += f"\n\n💡 تلميح: تأكد من كتابة 'Début' قبل بدء التعليمات."
-        elif "Fin" in exp:
-            msg += f"\n\n💡 تلميح: هل نسيت إغلاق حلقة أو شرط، أو نسيت 'Fin' في النهاية؟"
-        elif "قوس" in exp or ")" in exp:
-            msg += f"\n\n💡 تلميح: يبدو أنك فتحت قوساً '(' ولكنك نسيت إغلاقه ')'!"
+        found = str(e.token).strip()
+        exp_set = set(e.expected or [])
+        exp_nice = "، ".join(_nice(x) for x in list(exp_set)[:5]) or "?"
+        ln, col = e.line, e.column
+        msg = f"⛔ خطأ نحوي في السطر {ln}، العمود {col}:\n"
+        src = _src_line(code_text, ln)
+        if src: msg += f"   ▶ {src}\n     {' '*max(0,col-1)}^\n"
+        msg += f"   وُجد: '{found}'\n   المتوقع: {exp_nice}"
+        hints = []
+        if "SEMICOLON" in exp_set:
+            hints.append("نسيت الفاصلة المنقوطة ';' في نهاية التعليمة.")
+        elif any("Début" in str(x) for x in exp_set):
+            hints.append("لم تكتب 'Début' قبل بدء التعليمات.")
+        elif any(x in str(exp_set) for x in ["FinSi","FinPour","FinTantQue"]):
+            hints.append("نسيت إغلاق بنية تحكم (Si→FinSi، Pour→FinPour، TantQue→FinTantQue).")
+        elif "RPAR" in exp_set:
+            hints.append("فتحت قوساً '(' ولم تغلقه ')'.")
+        elif "COLON" in exp_set:
+            hints.append("نسيت ':' في التصريح. الصيغة: Variable x : entier;")
+        else:
+            fl = found.lower()
+            if fl in ("fin","finsi","finpour","fintantque"):
+                hints.append("أغلقت بنية لم تُفتح أو ترتيب البنيات خاطئ.")
+            elif fl == "sinon":
+                hints.append("'Sinon' يجب أن تكون بين Si...Alors و FinSi.")
+            else:
+                hints.append("تحقق من بنية الخوارزمية وترتيب التعليمات.")
+        msg += "\n\n💡 تلميح:\n" + "\n".join(f"   {i+1}. {h}" for i,h in enumerate(hints))
         return msg
     elif isinstance(e, UnexpectedCharacters):
-        char = str(e.char)
-        msg = f"⛔ حرف غريب في السطر {e.line}، العمود {e.column}:\n   الحرف '{char}' غير صالح للاستخدام هنا."
-        if char in ('"', "'"):
-            msg += f"\n\n💡 تلميح: يبدو أنك فتحت علامة تنصيص ({char}) ولكنك نسيت إغلاقها!"
-        else:
-            prev_line = e.line - 1 if e.line > 1 else e.line
-            msg += f"\n\n💡 تلميحات محتملة:\n1- قد تكون نسيت 'فاصلة منقوطة ;' في نهاية السطر السابق ({prev_line}).\n2- ربما فتحت قوساً '(' ولم تقم بإغلاقه ')'."
+        char, ln, col = str(e.char), e.line, e.column
+        msg = f"⛔ حرف غير متوقع في السطر {ln}، العمود {col}:\n"
+        src = _src_line(code_text, ln)
+        if src: msg += f"   ▶ {src}\n     {' '*max(0,col-1)}^\n"
+        msg += f"   الحرف '{char}' غير صالح هنا."
+        hints = []
+        if char in ('"',"'"): hints.append(f"فتحت تنصيص ({char}) ولم تغلقها!")
+        elif char == '=':
+            hints.append("للإسناد استخدم '<-' وليس '='. المساواة للمقارنة فقط.")
+        elif char == '.': hints.append("استخدم ';' بدلاً من '.' لإنهاء التعليمة.")
+        else: hints.append(f"تأكد أن عناصر التعليمة في هذا السطر كاملة و مرتبة ترتيبا صحيحا، كما تأكد أن التعليمة الماضية انتهت بشكل صحيح.")
+        msg += "\n\n💡 تلميح:\n" + "\n".join(f"   {i+1}. {h}" for i,h in enumerate(hints))
         return msg
     elif e.__class__.__name__ == 'UnexpectedEOF':
-        msg = f"⛔ نهاية غير متوقعة للملف (Unexpected EOF).\n\n💡 تلميح: الكود انتهى قبل الأوان! هل نسيت كتابة 'Fin' في النهاية؟ أو ربما نسيت إغلاق بنية مثل 'Fin Si' أو 'Fin Pour'؟"
+        exp_set = set(getattr(e, 'expected', []) or [])
+        msg = "⛔ انتهى الكود بشكل غير متوقع!\n"
+        hints = []
+        if any("Fin" in str(x) for x in exp_set): hints.append("نسيت 'Fin' في النهاية.")
+        if any("FinSi" in str(x) for x in exp_set): hints.append("'Si' بدون 'FinSi'.")
+        if any("FinPour" in str(x) for x in exp_set): hints.append("'Pour' بدون 'FinPour'.")
+        if any("FinTantQue" in str(x) for x in exp_set): hints.append("'TantQue' بدون 'FinTantQue'.")
+        if not hints: hints.append("تأكد من 'Fin' وإغلاق كل البنيات.")
+        msg += "\n💡 تلميح:\n" + "\n".join(f"   {i+1}. {h}" for i,h in enumerate(hints))
         return msg
     else:
         return ERR["general"].format(msg=str(e))
@@ -463,12 +494,17 @@ def transpile(code_text):
         result["lines"] = instruction_lines
         return result, None
     except UnexpectedInput as e:
-        return None, _fmt_parse_err(e)
+        return None, _fmt_parse_err(e, code_text)
     except Exception as e:
         msg = str(e)
         if "Error trying to process rule" in msg:
-            msg = msg.split("\n")[-1].strip() or msg.split("\n")[-2].strip()
-        return None, ERR["general"].format(msg=msg)
+            # Extract the original ValueError message from Lark's VisitError
+            parts = msg.split("\n", 2)
+            if len(parts) >= 3:
+                msg = parts[2].strip()
+            else:
+                msg = parts[-1].strip()
+        return None, f"⛔ خطأ: {msg}"
 
 # ─── محرك التنفيذ خطوة بخطوة ────────────────────────────────────
 class StepExecutor:
