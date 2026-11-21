@@ -1,9 +1,9 @@
 """MyAlgo IDE, By Aymen Chraf"""
-import sys, os, threading
+import sys, os, threading, re
 from PyQt6.QtWidgets import *
 from PyQt6.QtGui import *
 from PyQt6.QtCore import *
-from transpiler import transpile, StepExecutor, KEYWORDS
+from transpiler import transpile, StepExecutor, KEYWORDS, _src_line
 from highlighter import AlgoHighlighter
 
 C={"bg":"#F3F4F6","bg2":"#FFFFFF","hover":"#E5E7EB","gutter":"#F9FAFB",
@@ -21,7 +21,15 @@ class LineNumberArea(QWidget):
 class CodeEditor(QPlainTextEdit):
     def __init__(s,p=None):
         super().__init__(p); s._la=LineNumberArea(s)
+        s.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
+        s._la.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
         s.active_line = -1
+        s._error_line = -1
+        s._error_flash_visible = False
+        s._error_flash_steps_remaining = 0
+        s._error_flash_timer = QTimer(s)
+        s._error_flash_timer.setInterval(220)
+        s._error_flash_timer.timeout.connect(s._advance_error_flash)
         s.blockCountChanged.connect(s._ulw); s.updateRequest.connect(s._ula)
         s.cursorPositionChanged.connect(s._hl)
         f=QFont("JetBrains Mono",16); f.setStyleHint(QFont.StyleHint.Monospace); s.setFont(f)
@@ -31,7 +39,11 @@ class CodeEditor(QPlainTextEdit):
         s._ulw(); s._hl()
     def line_number_area_width(s):
         return 16+s.fontMetrics().horizontalAdvance('9')*max(1,len(str(s.blockCount())))
-    def _ulw(s): s.setViewportMargins(s.line_number_area_width(),0,0,0)
+    def _ulw(s,_=0):
+        w = s.line_number_area_width()
+        s.setViewportMargins(w,0,0,0)
+        cr = s.contentsRect()
+        s._la.setGeometry(QRect(cr.left(),cr.top(),w,cr.height()))
     def _ula(s,r,dy):
         if dy: s._la.scroll(0,dy)
         else: s._la.update(0,r.y(),s._la.width(),r.height())
@@ -42,14 +54,23 @@ class CodeEditor(QPlainTextEdit):
     def line_number_area_paint(s,ev):
         p=QPainter(s._la); p.fillRect(ev.rect(),QColor(C['gutter']))
         b=s.firstVisibleBlock(); bn=b.blockNumber()
-        top=round(s.blockBoundingGeometry(b).translated(s.contentOffset()).top())
-        bot=top+round(s.blockBoundingRect(b).height()); cl=s.textCursor().blockNumber()
-        while b.isValid() and top<=ev.rect().bottom():
-            if b.isVisible() and bot>=ev.rect().top():
-                p.setPen(QColor(C['accent']) if bn==cl else QColor(C['comment']))
+        cl=s.textCursor().blockNumber()
+        while b.isValid():
+            # Compute every position from the document geometry.  Accumulating
+            # rounded line heights drifts after scrolling through many lines.
+            rect=s.blockBoundingGeometry(b).translated(s.contentOffset())
+            top=round(rect.top())
+            bottom=round(rect.bottom())
+            if top > ev.rect().bottom(): break
+            if b.isVisible() and bottom >= ev.rect().top():
+                if s._error_flash_visible and bn == s._error_line - 1:
+                    color=C['red']
+                else:
+                    color=C['accent'] if bn==cl else C['comment']
+                p.setPen(QColor(color))
                 p.setFont(s.font())
-                p.drawText(0,top,s._la.width()-6,s.fontMetrics().height(),Qt.AlignmentFlag.AlignRight,str(bn+1))
-            b=b.next(); top=bot; bot=top+round(s.blockBoundingRect(b).height()); bn+=1
+                p.drawText(0,top,s._la.width()-6,round(rect.height()),Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,str(bn+1))
+            b=b.next(); bn+=1
         p.end()
     def _hl(s):
         selections = []
@@ -66,12 +87,45 @@ class CodeEditor(QPlainTextEdit):
             sel.format.setProperty(QTextFormat.Property.FullWidthSelection,True)
             sel.cursor=s.textCursor(); sel.cursor.clearSelection()
             selections.append(sel)
+
+        if s._error_flash_visible and s._error_line > 0:
+            cursor = QTextCursor(s.document().findBlockByNumber(s._error_line - 1))
+            if not cursor.isNull():
+                sel_error = QTextEdit.ExtraSelection()
+                sel_error.format.setBackground(QColor("#FCA5A5"))
+                sel_error.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
+                sel_error.cursor = cursor
+                selections.append(sel_error)
             
         s.setExtraSelections(selections)
         
     def set_active_line(s, line_num):
         s.active_line = line_num
         s._hl()
+
+    def flash_error_line(s, line_num):
+        if not isinstance(line_num, int) or line_num < 1 or line_num > s.blockCount():
+            return
+        s._error_line = line_num
+        s._error_flash_visible = True
+        # The first visible interval plus two later visible intervals = 3 flashes.
+        s._error_flash_steps_remaining = 5
+        s._error_flash_timer.start()
+        s._hl()
+        cursor = QTextCursor(s.document().findBlockByNumber(line_num - 1))
+        s.setTextCursor(cursor)
+        s.centerCursor()
+        s._la.update()
+
+    def _advance_error_flash(s):
+        s._error_flash_visible = not s._error_flash_visible
+        s._error_flash_steps_remaining -= 1
+        if s._error_flash_steps_remaining <= 0:
+            s._error_flash_visible = False
+            s._error_line = -1
+            s._error_flash_timer.stop()
+        s._hl()
+        s._la.update()
 
 class ConsoleWidget(QWidget):
     input_submitted=pyqtSignal(str)
@@ -92,17 +146,43 @@ class ConsoleWidget(QWidget):
                 k = ev.key()
                 if k == Qt.Key.Key_Return or k == Qt.Key.Key_Enter:
                     if not s.enter_submits: return True
-                    txt = s.output.toPlainText()[s._input_start_pos:]
+                    txt = s.current_input()
                     s.output.setReadOnly(True)
                     s._input_start_pos = -1
                     s.append("\n") # ensure cursor is on next line
                     s.input_submitted.emit(txt.strip())
                     return True
-                elif k in (Qt.Key.Key_Backspace, Qt.Key.Key_Left):
-                    c = s.output.textCursor()
-                    if c.position() <= s._input_start_pos:
-                        return True
+                # Input is append-only: history cannot be selected, changed, or
+                # used as the insertion point while the program is waiting.
+                s._move_input_cursor_to_end()
+                if k == Qt.Key.Key_Backspace:
+                    return s.output.textCursor().position() <= s._input_start_pos
+                if ev.matches(QKeySequence.StandardKey.Paste):
+                    return False
+                if not ev.text():
+                    return True
+            elif ev.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick,
+                               QEvent.Type.MouseButtonRelease, QEvent.Type.MouseMove,
+                               QEvent.Type.ContextMenu):
+                s._move_input_cursor_to_end()
+                return True
+            elif ev.type() == QEvent.Type.InputMethod:
+                s._move_input_cursor_to_end()
         return super().eventFilter(obj, ev)
+
+    def _move_input_cursor_to_end(s):
+        c = s.output.textCursor()
+        c.clearSelection()
+        c.movePosition(QTextCursor.MoveOperation.End)
+        s.output.setTextCursor(c)
+
+    def current_input(s):
+        if s._input_start_pos == -1:
+            return ""
+        c = QTextCursor(s.output.document())
+        c.setPosition(s._input_start_pos)
+        c.movePosition(QTextCursor.MoveOperation.End, QTextCursor.MoveMode.KeepAnchor)
+        return c.selectedText().replace("\u2029", "\n").replace("\u2028", "\n")
 
     def request_input(s,prompt):
         if prompt:
@@ -112,14 +192,42 @@ class ConsoleWidget(QWidget):
         c = s.output.textCursor()
         c.movePosition(QTextCursor.MoveOperation.End)
         s.output.setTextCursor(c)
-        s._input_start_pos = len(s.output.toPlainText())
+        s._input_start_pos = c.position()
 
     def append(s,text,color=None):
         if color is None: color = C['text']
-        text = str(text).replace('\n', '<br>')
         c = s.output.textCursor()
         c.movePosition(QTextCursor.MoveOperation.End)
-        c.insertHtml(f"<span style='color:{color};'>{text}</span>")
+
+        fmt = QTextCharFormat()
+        fmt.setForeground(QColor(color))
+
+        bf_rtl = QTextBlockFormat()
+        bf_rtl.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        bf_rtl.setAlignment(Qt.AlignmentFlag.AlignRight)
+
+        bf_ltr = QTextBlockFormat()
+        bf_ltr.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
+        bf_ltr.setAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        text_str = str(text)
+        if not text_str:
+            return
+
+        lines = text_str.split('\n')
+        for i, line in enumerate(lines):
+            stripped = line.strip().replace('\u202a', '').replace('\u202c', '').replace('\u202d', '').replace('\u202e', '').strip()
+            if stripped:
+                is_caret = set(stripped) <= {"^", " ", "\t", "~"}
+                is_code = "▶" in line
+                has_arabic = bool(re.search(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]', line))
+                has_latin = bool(re.search(r'[a-zA-Z]', line))
+                is_ltr = is_code or is_caret or (has_latin and not has_arabic)
+                c.setBlockFormat(bf_ltr if is_ltr else bf_rtl)
+            c.insertText(line, fmt)
+            if i < len(lines) - 1:
+                c.insertBlock()
+
         s.output.setTextCursor(c)
         s.output.ensureCursorVisible()
 
@@ -129,7 +237,7 @@ class ConsoleWidget(QWidget):
 
 class ExecutionThread(QThread):
     output_sig=pyqtSignal(str)
-    error_sig=pyqtSignal(str)
+    error_sig=pyqtSignal(str,int)
     step_done=pyqtSignal(dict,bool,int)
     input_req=pyqtSignal(str)
     def __init__(s,executor,run_all=False):
@@ -339,8 +447,8 @@ class MainWindow(QMainWindow):
         b_paste=QPushButton("📝 لصق"); b_paste.clicked.connect(s.editor.paste); tb.addWidget(b_paste)
         tb.addSeparator()
         
-        b_undo=QPushButton("↩️ تراجع"); b_undo.clicked.connect(s.editor.undo); tb.addWidget(b_undo)
-        b_redo=QPushButton("↪️ إعادة"); b_redo.clicked.connect(s.editor.redo); tb.addWidget(b_redo)
+        b_undo=QPushButton("↩️"); b_undo.clicked.connect(s.editor.undo); tb.addWidget(b_undo)
+        b_redo=QPushButton("↪️"); b_redo.clicked.connect(s.editor.redo); tb.addWidget(b_redo)
         tb.addSeparator()
         
         s.btn_build=QPushButton("🔨 بناء (F4)"); s.btn_build.clicked.connect(s.act_build); tb.addWidget(s.btn_build)
@@ -354,7 +462,7 @@ class MainWindow(QMainWindow):
         s.act_run_action.setEnabled(False)
         s.act_step_action.setEnabled(False)
         tb.addSeparator()
-        b4=QPushButton("🗑 مسح"); b4.clicked.connect(s.act_clear); tb.addWidget(b4)
+        b4=QPushButton("🗑 إعادة تنفيذ"); b4.clicked.connect(s.act_clear); tb.addWidget(b4)
         
         sp = QWidget(); sp.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred); tb.addWidget(sp)
         b_about=QPushButton("ℹ️ حول البرنامج"); b_about.clicked.connect(s.act_about); tb.addWidget(b_about)
@@ -398,6 +506,7 @@ class MainWindow(QMainWindow):
         result, err = transpile(code)
         if err:
             s.console.append(err,C['red']); s._result=None
+            s.editor.flash_error_line(getattr(err, "line", None))
             s.btn_step.setEnabled(False); s.btn_run.setEnabled(False)
             s.act_run_action.setEnabled(False); s.act_step_action.setEnabled(False)
             s.btn_build.setEnabled(True); s.act_build_action.setEnabled(True)
@@ -423,7 +532,7 @@ class MainWindow(QMainWindow):
         executor=StepExecutor(result)
         s._thread=ExecutionThread(executor,run_all=True)
         s._thread.output_sig.connect(lambda t: s.console.append(t,C['text']))
-        s._thread.error_sig.connect(lambda t: s.console.append(t,C['red']))
+        s._thread.error_sig.connect(s._on_runtime_error)
         s._thread.step_done.connect(s._on_step_done)
         s._thread.input_req.connect(s.console.request_input)
         s._thread.start()
@@ -431,7 +540,7 @@ class MainWindow(QMainWindow):
     def act_step(s):
         if s._thread and s._thread.isRunning():
             if s.console._input_start_pos != -1:
-                txt = s.console.output.toPlainText()[s.console._input_start_pos:].strip()
+                txt = s.console.current_input().strip()
                 if not txt: return
                 s.console.output.setReadOnly(True)
                 s.console._input_start_pos = -1
@@ -449,7 +558,7 @@ class MainWindow(QMainWindow):
         executor=StepExecutor(s._result)
         s._thread=ExecutionThread(executor,run_all=False)
         s._thread.output_sig.connect(lambda t: s.console.append(t,C['text']))
-        s._thread.error_sig.connect(lambda t: s.console.append(t,C['red']))
+        s._thread.error_sig.connect(s._on_runtime_error)
         s._thread.step_done.connect(s._on_step_done)
         s._thread.input_req.connect(s.console.request_input)
         s._thread.start()
@@ -524,6 +633,16 @@ class MainWindow(QMainWindow):
 
     def _on_input(s,val):
         if s._thread: s._thread.provide_input(val)
+
+    def _on_runtime_error(s, message, line_num):
+        formatted = message
+        if line_num and line_num > 0:
+            code = s.editor.toPlainText()
+            src = _src_line(code, line_num)
+            if src and src not in formatted:
+                formatted = f"⛔ خطأ في وقت التنفيذ في السطر {line_num}:\n\u202A   ▶ {src}\u202C\n" + message
+        s.console.append(formatted, C['red'])
+        s.editor.flash_error_line(line_num)
 
     def _on_step_done(s,variables,finished,line):
         s._update_mem(variables)

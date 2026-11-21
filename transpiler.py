@@ -7,11 +7,18 @@ from lark import Lark, Tree, Token, Transformer, UnexpectedInput, UnexpectedToke
 # ─── رسائل الخطأ بالعربية ────────────────────────────────────────
 ERR = {
     "division_zero": "⛔ خطأ حسابي في وقت التنفيذ:\n   لا يمكن القسمة على صفر!\n\n💡 تلميح: تحقق من قيمة المقام (المتغير الذي تقسم عليه)، وتأكد أنه لا يساوي 0 قبل عملية القسمة.",
-    "undefined_var": "⛔ خطأ في وقت التنفيذ:\n   المتغير '{name}' غير معرّف.\n\n💡 تلميح: تأكد من التصريح عنه في قسم 'Variable' قبل 'Début'.\n   مثال: Variable {name} : entier;",
+    "undefined_var": "⛔ خطأ في وقت التنفيذ:\n   المتغير '{name}' غير معرّف.\n\n💡 تلميح: تأكد من التصريح عنه في قسم 'Variable' قبل 'Début'.\n   مثال: \u202AVariable {name} : entier;\u202C",
     "type_error": "⛔ خطأ في نوع البيانات:\n   {msg}",
     "index_error": "⛔ خطأ في الوصول للمصفوفة:\n   {msg}\n\n💡 تلميح: تحقق من أن المؤشر (index) لا يتجاوز حجم المصفوفة المُعرَّف.",
     "general": "⛔ خطأ: {msg}",
 }
+
+class SourceError(str):
+    """A displayable compiler error that keeps its original source line."""
+    def __new__(cls, message, line=None):
+        instance = super().__new__(cls, message)
+        instance.line = line if isinstance(line, int) and line > 0 else None
+        return instance
 
 KEYWORDS = [
     "Algorithme","Début","Fin.","Variable","Var","Constante",
@@ -148,7 +155,7 @@ class AlgoTransformer(Transformer):
             raise ValueError(f"الكلمة '{n}' محجوزة ولا يمكن استخدامها كاسم لمتغير أو ثابت.\n💡 تلميح: اختر اسماً آخر مثل '{n}1' أو 'my_{n}'.")
         if check_defined:
             if n not in self.variables and n not in self.constants:
-                raise ValueError(f"المتغير '{n}' غير معرّف.\n💡 تلميح: أضف التصريح عنه قبل 'Début':\n   Variable {n} : entier;")
+                raise ValueError(f"المتغير '{n}' غير معرّف.\n💡 تلميح: أضف التصريح عنه قبل 'Début':\n   \u202AVariable {n} : entier;\u202C")
             if is_assign and n in self.constants:
                 raise ValueError(f"لا يمكن تغيير قيمة الثابت '{n}'.\n💡 تلميح: الثوابت (Constante) لا يمكن تعديلها بعد تعريفها. استخدم 'Variable' إذا أردت تغيير القيمة.")
         else:
@@ -347,7 +354,7 @@ def _nice(t):
     t_str = str(t).replace("'", "").replace('"', "")
     m = {
         "CNAME": "اسم متغير", "ESCAPED_STRING": 'نص "..."',
-        "NUMBER": "رقم", "SEMICOLON": "فاصلة منقوطة ';'",
+        "NUMBER": "رقم", "SEMICOLON": "فاصلة منقوطة \u202A';'\u202C",
         "COLON": "نقطتين ':'", "COMMA": "فاصلة ','",
         "LPAR": "قوس فتح '('", "RPAR": "قوس إغلاق ')'",
         "_EOF": "نهاية الملف",
@@ -371,11 +378,11 @@ def _fmt_parse_err(e, code_text=""):
         ln, col = e.line, e.column
         msg = f"⛔ خطأ نحوي في السطر {ln}، العمود {col}:\n"
         src = _src_line(code_text, ln)
-        if src: msg += f"   ▶ {src}\n     {' '*max(0,col-1)}^\n"
-        msg += f"   وُجد: '{found}'\n   المتوقع: {exp_nice}"
+        if src: msg += f"\u202A   ▶ {src}\u202C\n\u202A     {' '*max(0,col-1)}^\u202C\n"
+        msg += f"   وُجد: \u202A'{found}'\u202C\n   المتوقع: {exp_nice}"
         hints = []
         if "SEMICOLON" in exp_set:
-            hints.append("نسيت الفاصلة المنقوطة ';' في نهاية التعليمة.")
+            hints.append("نسيت الفاصلة المنقوطة \u202A';'\u202C في نهاية التعليمة.")
         elif any("Début" in str(x) for x in exp_set):
             hints.append("لم تكتب 'Début' قبل بدء التعليمات.")
         elif any(x in str(exp_set) for x in ["FinSi","FinPour","FinTantQue"]):
@@ -383,7 +390,7 @@ def _fmt_parse_err(e, code_text=""):
         elif "RPAR" in exp_set:
             hints.append("فتحت قوساً '(' ولم تغلقه ')'.")
         elif "COLON" in exp_set:
-            hints.append("نسيت ':' في التصريح. الصيغة: Variable x : entier;")
+            hints.append("نسيت ':' في التصريح. الصيغة: \u202AVariable x : entier;\u202C")
         else:
             fl = found.lower()
             if fl in ("fin","finsi","finpour","fintantque"):
@@ -398,12 +405,12 @@ def _fmt_parse_err(e, code_text=""):
         char, ln, col = str(e.char), e.line, e.column
         msg = f"⛔ حرف غير متوقع في السطر {ln}، العمود {col}:\n"
         src = _src_line(code_text, ln)
-        if src: msg += f"   ▶ {src}\n     {' '*max(0,col-1)}^\n"
-        msg += f"   الحرف '{char}' غير صالح هنا."
+        if src: msg += f"\u202A   ▶ {src}\u202C\n\u202A     {' '*max(0,col-1)}^\u202C\n"
+        msg += f"   الحرف \u202A'{char}'\u202C غير صالح هنا."
         hints = []
         if char in ('"',"'"): hints.append(f"فتحت تنصيص ({char}) ولم تغلقها!")
         elif char == '=':
-            hints.append("للإسناد استخدم '<-' وليس '='. المساواة للمقارنة فقط.")
+            hints.append("للإسناد استخدم '>- ' وليس '='. المساواة للمقارنة فقط.")
         elif char == '.': hints.append("استخدم ';' بدلاً من '.' لإنهاء التعليمة.")
         else: hints.append(f"تأكد أن عناصر التعليمة في هذا السطر كاملة و مرتبة ترتيبا صحيحا، كما تأكد أن التعليمة الماضية انتهت بشكل صحيح.")
         msg += "\n\n💡 تلميح:\n" + "\n".join(f"   {i+1}. {h}" for i,h in enumerate(hints))
@@ -494,7 +501,7 @@ def transpile(code_text):
         result["lines"] = instruction_lines
         return result, None
     except UnexpectedInput as e:
-        return None, _fmt_parse_err(e, code_text)
+        return None, SourceError(_fmt_parse_err(e, code_text), getattr(e, "line", None))
     except Exception as e:
         msg = str(e)
         if "Error trying to process rule" in msg:
@@ -504,7 +511,14 @@ def transpile(code_text):
                 msg = parts[2].strip()
             else:
                 msg = parts[-1].strip()
-        return None, f"⛔ خطأ: {msg}"
+        source = getattr(e, "obj", None)
+        line = getattr(getattr(source, "meta", None), "line", None)
+        formatted_err = f"⛔ خطأ: {msg}"
+        if line and isinstance(line, int):
+            src = _src_line(code_text, line)
+            if src and src not in msg:
+                formatted_err = f"⛔ خطأ في السطر {line}:\n\u202A   ▶ {src}\u202C\n   {msg}"
+        return None, SourceError(formatted_err, line)
 
 # ─── محرك التنفيذ خطوة بخطوة ────────────────────────────────────
 class StepExecutor:
@@ -613,10 +627,20 @@ class StepExecutor:
             self.finished = True
         except Exception as e:
             err = _fmt_runtime_err(e)
-            error_signal.emit(err)
+            error_signal.emit(err, self._runtime_error_line(e, last_emitted_line))
             self.finished = True
         finally:
             sys.settrace(None)
+
+    def _runtime_error_line(self, error, last_emitted_line):
+        """Map the generated Python traceback back to the algorithm source."""
+        source_line = -1
+        traceback = error.__traceback__
+        while traceback:
+            if traceback.tb_frame.f_globals is self.ns:
+                source_line = self.line_map.get(traceback.tb_lineno, -1)
+            traceback = traceback.tb_next
+        return source_line if source_line != -1 else last_emitted_line
             
     # Legacy methods for compatibility, though ExecutionThread will be updated
     def step_next(self): return "", None, True
