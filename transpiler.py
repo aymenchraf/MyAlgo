@@ -155,7 +155,7 @@ class AlgoTransformer(Transformer):
             raise ValueError(f"الكلمة '{n}' محجوزة ولا يمكن استخدامها كاسم لمتغير أو ثابت.\n💡 تلميح: اختر اسماً آخر مثل '{n}1' أو 'my_{n}'.")
         if check_defined:
             if n not in self.variables and n not in self.constants:
-                raise ValueError(f"المتغير '{n}' غير معرّف.\n💡 تلميح: أضف التصريح عنه قبل 'Début':\n   \u202AVariable {n} : entier;\u202C")
+                raise ValueError(f"المتغير '{n}' غير معرّف.\n💡 تلميح: أضف التصريح عنه قبل :'Début'\n   \u202AVariable {n} : entier;\u202C")
             if is_assign and n in self.constants:
                 raise ValueError(f"لا يمكن تغيير قيمة الثابت '{n}'.\n💡 تلميح: الثوابت (Constante) لا يمكن تعديلها بعد تعريفها. استخدم 'Variable' إذا أردت تغيير القيمة.")
         else:

@@ -5,6 +5,7 @@ from PyQt6.QtGui import *
 from PyQt6.QtCore import *
 from transpiler import transpile, StepExecutor, KEYWORDS, _src_line
 from highlighter import AlgoHighlighter
+from completer import CodeCompleter
 
 C={"bg":"#F3F4F6","bg2":"#FFFFFF","hover":"#E5E7EB","gutter":"#F9FAFB",
    "text":"#1F2937","accent":"#3B82F6","green":"#10B981","red":"#EF4444",
@@ -32,6 +33,7 @@ class CodeEditor(QPlainTextEdit):
         s._error_flash_timer.timeout.connect(s._advance_error_flash)
         s.blockCountChanged.connect(s._ulw); s.updateRequest.connect(s._ula)
         s.cursorPositionChanged.connect(s._hl)
+        s._completer = CodeCompleter(s)
         f=QFont("JetBrains Mono",16); f.setStyleHint(QFont.StyleHint.Monospace); s.setFont(f)
         s.setTabStopDistance(s.fontMetrics().horizontalAdvance(' ')*4)
         s.setWordWrapMode(QTextOption.WrapMode.NoWrap)
@@ -126,6 +128,41 @@ class CodeEditor(QPlainTextEdit):
             s._error_flash_timer.stop()
         s._hl()
         s._la.update()
+
+    def keyPressEvent(s, e):
+        if s._completer and s._completer.popup().isVisible():
+            if e.key() in (Qt.Key.Key_Enter, Qt.Key.Key_Return, Qt.Key.Key_Tab):
+                idx = s._completer.popup().currentIndex()
+                if not idx.isValid():
+                    idx = s._completer._model.index(0, 0)
+                if idx.isValid():
+                    s._completer.insert_selected_completion(idx)
+                s._completer.popup().hide()
+                e.accept()
+                return
+            elif e.key() == Qt.Key.Key_Escape:
+                s._completer.popup().hide()
+                e.accept()
+                return
+            elif e.key() in (Qt.Key.Key_Up, Qt.Key.Key_Down, Qt.Key.Key_PageUp, Qt.Key.Key_PageDown):
+                s._completer.popup().keyPressEvent(e)
+                return
+
+        is_shortcut = (e.modifiers() == Qt.KeyboardModifier.ControlModifier and e.key() == Qt.Key.Key_Space)
+        super().keyPressEvent(e)
+
+        if s._completer:
+            s._completer.update_and_show(is_manual_trigger=is_shortcut)
+
+    def mousePressEvent(s, e):
+        if s._completer:
+            s._completer.popup().hide()
+        super().mousePressEvent(e)
+
+    def focusOutEvent(s, e):
+        super().focusOutEvent(e)
+        if s._completer:
+            s._completer.popup().hide()
 
 class ConsoleWidget(QWidget):
     input_submitted=pyqtSignal(str)
