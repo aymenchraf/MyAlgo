@@ -6,6 +6,7 @@ from PyQt6.QtCore import *
 from transpiler import transpile, StepExecutor, KEYWORDS, _src_line
 from highlighter import AlgoHighlighter
 from completer import CodeCompleter
+from keyword_help import KeywordButton, KeywordHelpDialog
 
 C={"bg":"#F3F4F6","bg2":"#FFFFFF","hover":"#E5E7EB","gutter":"#F9FAFB",
    "text":"#1F2937","accent":"#3B82F6","green":"#10B981","red":"#EF4444",
@@ -384,7 +385,9 @@ class MainWindow(QMainWindow):
         sb_outer_layout.setContentsMargins(0,0,0,0)
         sb_outer_layout.setSpacing(0)
         
-        sb_outer_layout.addWidget(s._hdr("📌 الكلمات المحجوزة",C['purple']))
+        sb_hdr = s._hdr("📌 الكلمات المحجوزة", C['purple'])
+        sb_hdr.setToolTip("انقر بزر الفأرة الأيمن على أي كلمة لعرض شرحها وأمثلتها")
+        sb_outer_layout.addWidget(sb_hdr)
         
         sb_scroll = QScrollArea()
         sb_scroll.setWidgetResizable(True)
@@ -433,13 +436,15 @@ class MainWindow(QMainWindow):
         
         for i, (kw, color) in enumerate(keywords):
             # \u202D is Left-to-Right Override (LRO) which forces LTR rendering for the button text
-            btn = QPushButton(f"\u202D{kw}\u202C")
+            btn = KeywordButton(f"\u202D{kw}\u202C")
             btn.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
             btn.setFont(QFont("JetBrains Mono", 13, QFont.Weight.Bold))
             btn.setStyleSheet(f"QPushButton{{background:transparent;color:{color};border:1px solid {C['border']};border-radius:4px;padding:6px;text-align:right;font-family:'JetBrains Mono';}} QPushButton:hover{{background:{C['bg']};}}")
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            btn.setToolTip(f"انقر بالزر الأيسر للإدراج في المحرر\nانقر بالزر الأيمن لعرض شرح '{kw}' مع أمثلة تطبيقية")
             btn.clicked.connect(lambda checked, k=kw: (s.editor.insertPlainText(k + " "), s.editor.setFocus()))
+            btn.rightClicked.connect(lambda k=kw: s.show_keyword_help(k))
             kw_layout.addWidget(btn, i // 2, i % 2)
             
         kw_layout.setRowStretch((len(keywords) // 2) + 1, 1)
@@ -606,56 +611,170 @@ class MainWindow(QMainWindow):
 
     def act_about(s):
         dlg = QDialog(s)
-        dlg.setWindowTitle("حول البرنامج")
-        dlg.setFixedWidth(450)
+        dlg.setWindowTitle("حول البرنامج — MyAlgo")
+        dlg.setFixedWidth(520)
         dlg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.MSWindowsFixedSizeDialogHint)
+        dlg.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         dlg.setStyleSheet(f"QDialog {{ background: {C['bg2']}; }}")
         
         layout = QVBoxLayout(dlg)
         layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
-        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setContentsMargins(24, 24, 24, 20)
+        layout.setSpacing(14)
         
+        # ── 1. Hero / Header Card ──
+        hero = QWidget()
+        hero.setStyleSheet("""
+            QWidget {
+                background-color: #F8FAFC;
+                border: 1px solid #E2E8F0;
+                border-radius: 12px;
+            }
+        """)
+        hero_layout = QVBoxLayout(hero)
+        hero_layout.setContentsMargins(16, 18, 16, 16)
+        hero_layout.setSpacing(8)
+        hero_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # Logo
         logo = QLabel()
         pix_path = resource_path(os.path.join("img", "log.png"))
         pix = QPixmap(pix_path)
         if not pix.isNull():
-            logo.setPixmap(pix.scaled(140, 140, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            logo.setPixmap(pix.scaled(90, 90, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(logo)
+        logo.setStyleSheet("border: none; background: transparent;")
+        hero_layout.addWidget(logo)
         
-        t = QLabel("من تطوير الأستاذ\nشرف أيمن")
-        t.setFont(QFont("Cairo", 22, QFont.Weight.Bold))
-        t.setStyleSheet(f"color: {C['kw_blue']};")
-        t.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(t)
+        # App Title
+        app_name = QLabel("MyAlgo IDE")
+        app_name.setFont(QFont("JetBrains Mono", 19, QFont.Weight.Bold))
+        app_name.setStyleSheet("color: #1D4ED8; border: none; background: transparent;")
+        app_name.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        hero_layout.addWidget(app_name)
         
-        sub = QLabel("الإصدار 0.6 (نسخة beta)")
-        sub.setFont(QFont("Cairo", 13))
-        sub.setStyleSheet(f"color: {C['red']}; font-weight: bold; margin-bottom: 15px;")
-        sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(sub)
+        # Subtitle
+        sub_title = QLabel("البيئة التعليمية التفاعلية لتدريس الخوارزميات")
+        sub_title.setFont(QFont("Cairo", 11, QFont.Weight.DemiBold))
+        sub_title.setStyleSheet("color: #475569; border: none; background: transparent;")
+        sub_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        hero_layout.addWidget(sub_title)
         
-        desc = QLabel(
-            "<div style='text-align:center;'>"
-            "<p style='margin-bottom:15px;'>هذا البرنامج لا يزال قيد التطوير .<br/><b>يُرجى عدم استخدامه في التدريس حالياً</b> لأنه قد يحتوي على أخطاء.</p>"
-            "<p style='color:#6B7280; font-size:14px;'>للإبلاغ عن أي مشكلة، يرجى التواصل عبر البريد الإلكتروني:<br/>"
-            f"<a href='mailto:aymen.chraf@gmail.com' style='color:{C['accent']}; text-decoration:none; font-weight:bold;'>aymen.chraf@gmail.com</a></p>"
-            "</div>"
+        # Badges row (Version + Stable)
+        badges_layout = QHBoxLayout()
+        badges_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badges_layout.setSpacing(8)
+        
+        v_badge = QLabel("  الإصدار 1.0  ")
+        v_badge.setFont(QFont("Cairo", 9, QFont.Weight.Bold))
+        v_badge.setStyleSheet("""
+            color: #1D4ED8;
+            background-color: #EFF6FF;
+            border: 1px solid #BFDBFE;
+            border-radius: 10px;
+            padding: 3px 10px;
+        """)
+        badges_layout.addWidget(v_badge)
+        hero_layout.addLayout(badges_layout)
+        layout.addWidget(hero)
+        
+        # ── 2. About & Features Card ──
+        content_card = QWidget()
+        content_card.setStyleSheet("""
+            QWidget {
+                background-color: #FFFFFF;
+                border: 1px solid #E2E8F0;
+                border-radius: 10px;
+            }
+        """)
+        card_layout = QVBoxLayout(content_card)
+        card_layout.setContentsMargins(18, 14, 18, 14)
+        card_layout.setSpacing(10)
+        
+        about_desc = QLabel(
+            "برمجية تعليمية متكاملة صُممت خصيصاً لمرافقة تلاميذ وأساتذة مادة المعلوماتية، "
+            "لتبسيط المفاهيم وتجسيد القواعد الخوارزمية الأكاديمية عبر التنفيذ التفاعلي الفوري وتتبع الذاكرة خطوة بخطوة."
         )
-        desc.setFont(QFont("Cairo", 12))
-        desc.setWordWrap(True)
-        desc.setOpenExternalLinks(True)
-        desc.setStyleSheet(f"color: {C['text']};")
-        layout.addWidget(desc)
+        about_desc.setFont(QFont("Cairo", 10))
+        about_desc.setWordWrap(True)
+        about_desc.setAlignment(Qt.AlignmentFlag.AlignRight)
+        about_desc.setStyleSheet("color: #334155; border: none; line-height: 145%;")
+        card_layout.addWidget(about_desc)
         
-        btn = QPushButton("حسناً، فهمت")
+        # Divider line
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setStyleSheet("color: #F1F5F9; border: none; background: #E2E8F0; height: 1px;")
+        card_layout.addWidget(line)
+        
+        # ── 3. Developer & Contact Card ──
+        dev_card = QWidget()
+        dev_card.setStyleSheet("""
+            QWidget {
+                background-color: #F0FDF4;
+                border: 1px solid #BBF7D0;
+                border-radius: 8px;
+            }
+        """)
+        dev_layout = QVBoxLayout(dev_card)
+        dev_layout.setContentsMargins(14, 10, 14, 10)
+        dev_layout.setSpacing(4)
+        dev_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        dev_title = QLabel("إعداد وتطوير: الأستاذ  Aymen Chraf")
+        dev_title.setFont(QFont("Cairo", 10, QFont.Weight.Bold))
+        dev_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        dev_title.setStyleSheet("color: #166534; border: none; background: transparent;")
+        dev_layout.addWidget(dev_title)
+        
+        dev_title = QLabel("لا تنسونا من صالح دعائكم")
+        dev_title.setFont(QFont("Cairo", 10, QFont.Weight.Bold))
+        dev_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        dev_title.setStyleSheet("color: #166534; border: none; background: transparent;")
+        dev_layout.addWidget(dev_title)
+
+        dev_contact = QLabel(
+            "للملاحظات والاستفسارات أو الإبلاغ عن خطأ: "
+            "<a href='mailto:aymen.chraf@gmail.com' style='color:#15803D; text-decoration:none; font-weight:bold;'>"
+            "aymen.chraf@gmail.com</a>"
+        )
+        dev_contact.setFont(QFont("Cairo", 9))
+        dev_contact.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        dev_contact.setOpenExternalLinks(True)
+        dev_contact.setStyleSheet("color: #15803D; border: none; background: transparent;")
+        dev_layout.addWidget(dev_contact)
+        
+        layout.addWidget(dev_card)
+        
+        # ── 4. Close Button ──
+        btn = QPushButton("إغلاق")
+        btn.setFont(QFont("Cairo", 11, QFont.Weight.Bold))
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.setStyleSheet(f"QPushButton{{background:{C['kw_blue']}; color:white; border-radius:8px; padding:10px 40px; font-weight:bold; font-size:15px; margin-top:20px;}} QPushButton:hover{{background:#2563EB;}}")
+        btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2563EB;
+                color: #FFFFFF;
+                border: none;
+                border-radius: 8px;
+                padding: 9px 44px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #1D4ED8;
+            }
+        """)
         btn.clicked.connect(dlg.accept)
+        
         bl = QHBoxLayout()
-        bl.addStretch(); bl.addWidget(btn); bl.addStretch()
+        bl.addStretch()
+        bl.addWidget(btn)
+        bl.addStretch()
         layout.addLayout(bl)
         
+        dlg.exec()
+
+    def show_keyword_help(s, kw):
+        dlg = KeywordHelpDialog(kw, s)
         dlg.exec()
 
     def _stop_exec(s):
