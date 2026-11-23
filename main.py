@@ -111,8 +111,8 @@ class CodeEditor(QPlainTextEdit):
             return
         s._error_line = line_num
         s._error_flash_visible = True
-        # The first visible interval plus two later visible intervals = 3 flashes.
-        s._error_flash_steps_remaining = 5
+        # The first visible interval plus 5 later visible intervals = 6 flashes.
+        s._error_flash_steps_remaining = 11
         s._error_flash_timer.start()
         s._hl()
         cursor = QTextCursor(s.document().findBlockByNumber(line_num - 1))
@@ -816,8 +816,12 @@ class MainWindow(QMainWindow):
         s.mem_table.setRowCount(len(variables))
         for r,(name,info) in enumerate(variables.items()):
             s.mem_table.setItem(r,0,QTableWidgetItem(name))
-            vi=QTableWidgetItem(str(info['value']))
-            vi.setForeground(QColor(C['green']))
+            val_str = str(info['value'])
+            vi=QTableWidgetItem(val_str)
+            if val_str == "معدوم":
+                vi.setForeground(QColor(C['comment']))
+            else:
+                vi.setForeground(QColor(C['green']))
             vi.setFont(QFont("JetBrains Mono", 16, QFont.Weight.Bold))
             s.mem_table.setItem(r,1,vi)
             s.mem_table.setItem(r,2,QTableWidgetItem(info['type']))
@@ -825,16 +829,13 @@ class MainWindow(QMainWindow):
     def _update_mem_initial(s,result):
         v=result['variables']
         s.mem_table.setRowCount(len(v))
-        defaults={"entier":"0","réel":"0.0","reel":"0.0","caractère":"''","caractere":"''",
-                   "chaine de caractères":"''","chaine de caracteres":"''","chaine":"''",
-                   "booléen":"False","booleen":"False"}
         for r,(name,tp) in enumerate(v.items()):
             s.mem_table.setItem(r,0,QTableWidgetItem(name))
             if tp == "ثابت" and name in result.get('constants', {}):
                 vi=QTableWidgetItem(result['constants'][name])
                 vi.setForeground(QColor(C['purple']))
             else:
-                vi=QTableWidgetItem(defaults.get(tp,"0"))
+                vi=QTableWidgetItem("معدوم")
                 vi.setForeground(QColor(C['comment']))
             vi.setFont(QFont("JetBrains Mono", 16, QFont.Weight.Bold))
             s.mem_table.setItem(r,1,vi)

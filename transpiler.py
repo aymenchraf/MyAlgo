@@ -8,10 +8,76 @@ from lark import Lark, Tree, Token, Transformer, UnexpectedInput, UnexpectedToke
 ERR = {
     "division_zero": "⛔ خطأ حسابي في وقت التنفيذ:\n   لا يمكن القسمة على صفر!\n\n💡 تلميح: تحقق من قيمة المقام (المتغير الذي تقسم عليه)، وتأكد أنه لا يساوي 0 قبل عملية القسمة.",
     "undefined_var": "⛔ خطأ في وقت التنفيذ:\n   المتغير '{name}' غير معرّف.\n\n💡 تلميح: تأكد من التصريح عنه في قسم 'Variable' قبل 'Début'.\n   مثال: \u202AVariable {name} : entier;\u202C",
+    "uninitialized_var": "⛔ خطأ في وقت التنفيذ:\n   المتغير '{name}' يحمل قيمة معدومة (غير مهيأ)!\n   لا يمكن استعمال متغير بقيمة معدومة في العمليات الحسابية أو الشروط أو الكتابة.\n\n💡 تلميح: يجب إسناد قيمة للمتغير أولاً باستخدام تعليمة الإسناد أو القراءة (Lire) قبل محاولة استعماله.\n   مثال:\n   \u202A{name} <- 10;\u202C\n   أو: \u202ALire({name});\u202C",
     "type_error": "⛔ خطأ في نوع البيانات:\n   {msg}",
     "index_error": "⛔ خطأ في الوصول للمصفوفة:\n   {msg}\n\n💡 تلميح: تحقق من أن المؤشر (index) لا يتجاوز حجم المصفوفة المُعرَّف.",
     "general": "⛔ خطأ: {msg}",
 }
+
+class UninitializedVariableError(Exception):
+    def __init__(self, name=""):
+        super().__init__(f"المتغير '{name}' يحمل قيمة معدومة (غير مهيأ)!")
+        self.name = name
+
+class _UninitializedValue:
+    def __init__(self, name=""):
+        self.name = name
+
+    def __repr__(self):
+        return "معدوم"
+
+    def __str__(self):
+        return "معدوم"
+
+    def __format__(self, format_spec):
+        return "معدوم"
+
+    def _fail(self, *args, **kwargs):
+        raise UninitializedVariableError(self.name)
+
+    # Arithmetic
+    __add__ = _fail; __radd__ = _fail
+    __sub__ = _fail; __rsub__ = _fail
+    __mul__ = _fail; __rmul__ = _fail
+    __truediv__ = _fail; __rtruediv__ = _fail
+    __floordiv__ = _fail; __rfloordiv__ = _fail
+    __mod__ = _fail; __rmod__ = _fail
+    __pow__ = _fail; __rpow__ = _fail
+    __neg__ = _fail; __pos__ = _fail; __abs__ = _fail
+
+    # Comparisons
+    __lt__ = _fail; __le__ = _fail
+    __eq__ = _fail; __ne__ = _fail
+    __gt__ = _fail; __ge__ = _fail
+
+    # Conversions & logic
+    __bool__ = _fail; __int__ = _fail; __float__ = _fail; __index__ = _fail
+    __len__ = _fail; __iter__ = _fail; __getitem__ = _fail; __contains__ = _fail
+
+class _TableauArray(dict):
+    def __init__(self, name=""):
+        super().__init__()
+        self.name = name
+
+    def __getitem__(self, item):
+        if isinstance(item, _UninitializedValue):
+            raise UninitializedVariableError(item.name)
+        if item not in self:
+            raise UninitializedVariableError(f"{self.name}[{item}]")
+        val = super().__getitem__(item)
+        if isinstance(val, _UninitializedValue):
+            raise UninitializedVariableError(f"{self.name}[{item}]")
+        return val
+
+    def __setitem__(self, key, value):
+        if isinstance(key, _UninitializedValue):
+            raise UninitializedVariableError(key.name)
+        super().__setitem__(key, _eval_val(value))
+
+def _eval_val(val):
+    if isinstance(val, _UninitializedValue):
+        raise UninitializedVariableError(val.name)
+    return val
 
 class SourceError(str):
     """A displayable compiler error that keeps its original source line."""
@@ -191,17 +257,14 @@ class AlgoTransformer(Transformer):
         ts = str(items[-1]) if items else "entier"
         for item in items[:-1]:
             if isinstance(item, Token): var_names.append(str(item).lower())
-        defaults = {"entier":"0","réel":"0.0","reel":"0.0","caractère":"''",
-                     "caractere":"''","chaine de caractères":"''",
-                     "chaine de caracteres":"''","chaine":"''",
-                     "booléen":"False","booleen":"False"}
         ts_lower = ts.lower().strip()
-        if ts_lower.startswith("tableau"): d = "{}"
-        else: d = defaults.get(ts_lower, "0")
         for n in var_names:
             self._check_name(n)
             self.variables[n] = ts
-            lines.append(f"{n} = {d}")
+            if ts_lower.startswith("tableau"):
+                lines.append(f"{n} = _TableauArray('{n}')")
+            else:
+                lines.append(f"{n} = _UninitializedValue('{n}')")
         return lines
 
     def type_donnee(self, items): return " ".join(str(i) for i in items)
@@ -239,8 +302,8 @@ class AlgoTransformer(Transformer):
                         raise ValueError(f"المتغير '{var_name}' من نوع '{var_type}'، لا يمكن إسناد المتغير الرقمي '{val}' إليه.")
                 elif val_type in ("booléen", "booleen") and var_type not in ("booléen", "booleen", "entier"):
                     raise ValueError(f"المتغير '{var_name}' من نوع '{var_type}'، لا يمكن إسناد المتغير المنطقي '{val}' إليه.")
-        return f"#_L{meta.line}_\n{var_target} = {items[1]}"
-    def acces_tableau(self, items): return f"{str(items[0]).lower()}[{items[1]}]"
+        return f"#_L{meta.line}_\n{var_target} = _eval_val({items[1]})"
+    def acces_tableau(self, items): return f"{str(items[0]).lower()}[_eval_val({items[1]})]"
     
     @v_args(meta=True)
     def lecture(self, meta, items):
@@ -267,13 +330,13 @@ class AlgoTransformer(Transformer):
     def boucle_pour(self, meta, items):
         var_n = str(items[0]).lower()
         self._check_name(var_n, check_defined=True, is_assign=True)
-        return f"#_L{meta.line}_\nfor {var_n} in range(int({items[1]}), int({items[2]}) + 1):\n{_indent(items[3])}"
+        return f"#_L{meta.line}_\nfor {var_n} in range(int(_eval_val({items[1]})), int(_eval_val({items[2]})) + 1):\n{_indent(items[3])}"
         
     @v_args(meta=True)
     def boucle_pour_desc(self, meta, items):
         var_n = str(items[0]).lower()
         self._check_name(var_n, check_defined=True, is_assign=True)
-        return f"#_L{meta.line}_\nfor {var_n} in range(int({items[1]}), int({items[2]}) - 1, int({items[3]})):\n{_indent(items[4])}"
+        return f"#_L{meta.line}_\nfor {var_n} in range(int(_eval_val({items[1]})), int(_eval_val({items[2]})) - 1, int(_eval_val({items[3]}))):\n{_indent(items[4])}"
         
     @v_args(meta=True)
     def boucle_tantque(self, meta, items):
@@ -285,7 +348,7 @@ class AlgoTransformer(Transformer):
 
     @v_args(meta=True)
     def selon_cas(self, meta, items):
-        expr = str(items[0])
+        expr = f"_eval_val({items[0]})"
         lines, first = [], True
         for c in items[1:]:
             s = str(c)
@@ -431,6 +494,8 @@ def _fmt_parse_err(e, code_text=""):
 
 def _fmt_runtime_err(e):
     if isinstance(e, ZeroDivisionError): return ERR["division_zero"]
+    if isinstance(e, UninitializedVariableError):
+        return ERR["uninitialized_var"].format(name=e.name)
     if isinstance(e, NameError):
         m = re.search(r"name '(\w+)'", str(e))
         return ERR["undefined_var"].format(name=m.group(1) if m else "?")
@@ -534,14 +599,18 @@ class StepExecutor:
         self.finished = False
 
     def setup(self):
+        self.ns['_UninitializedValue'] = _UninitializedValue
+        self.ns['_TableauArray'] = _TableauArray
+        self.ns['UninitializedVariableError'] = UninitializedVariableError
+        self.ns['_eval_val'] = _eval_val
         exec(SETUP_CODE, self.ns)
         if self._input_cb:
             self.ns['_lire'] = self._make_lire()
             
         if self.out_stream:
-            self.ns['_ecrire'] = lambda *args: self.out_stream.write(" ".join(str(a) for a in args) + "\n")
+            self.ns['_ecrire'] = self._make_ecrire(self.out_stream)
         else:
-            self.ns['_ecrire'] = lambda *args: sys.stdout.write(" ".join(str(a) for a in args) + "\n")
+            self.ns['_ecrire'] = self._make_ecrire(sys.stdout)
             
         for d in self.declarations: exec(d, self.ns)
         import math, random
@@ -562,6 +631,14 @@ class StepExecutor:
             self.line_map[i + 1] = cur_line
         self.clean_code = "\n".join(clean_lines)
 
+    def _make_ecrire(self, out_stream):
+        def _ecrire(*args):
+            for a in args:
+                if isinstance(a, _UninitializedValue):
+                    raise UninitializedVariableError(a.name)
+            out_stream.write(" ".join(str(a) for a in args) + "\n")
+        return _ecrire
+
     def _make_lire(self):
         cb = self._input_cb
         def _lire(var_name):
@@ -573,11 +650,20 @@ class StepExecutor:
         return _lire
 
     def get_variables(self):
-        skip = {'__builtins__','math','_lire','input','random'}
+        skip = {'__builtins__','math','_lire','input','random','_UninitializedValue','_TableauArray','UninitializedVariableError','_eval_val'}
         result = {}
         for k, v in self.ns.items():
             if not k.startswith('_') and k not in skip and not callable(v) and not isinstance(v, type):
-                result[k] = {"value": v, "type": self.var_info.get(k, "?")}
+                if isinstance(v, _UninitializedValue):
+                    display_val = "معدوم"
+                elif isinstance(v, _TableauArray):
+                    if len(v) == 0:
+                        display_val = "معدوم"
+                    else:
+                        display_val = dict(v)
+                else:
+                    display_val = v
+                result[k] = {"value": display_val, "type": self.var_info.get(k, "?")}
         return result
 
     def run_debug(self, step_ev, is_run_all, step_done_signal, error_signal, stop_check=None):
@@ -595,6 +681,8 @@ class StepExecutor:
             for var_name, var_type_str in self.var_info.items():
                 if var_name in frame.f_locals:
                     val = frame.f_locals[var_name]
+                    if isinstance(val, (_UninitializedValue, _TableauArray)):
+                        continue
                     if var_type_str == 'entier' and not isinstance(val, (int, bool)):
                         raise TypeError(f"المتغير '{var_name}' من نوع (entier)، تم إسناد قيمة خاطئة إليه.")
                     elif var_type_str in ('réel', 'reel') and not isinstance(val, (int, float, bool)):
